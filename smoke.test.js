@@ -30,7 +30,7 @@ let pass = 0;
 const fails = [];
 const check = (name, cond) => { cond ? pass++ : (fails.push(name), console.log("FAIL:", name)); };
 
-check("home-1-resource-folder", qa(".res-cell").length === 1 && qa(".scene-cell").length === 0);
+check("home-2-resource-folders", qa(".res-cell").length === 2 && qa(".scene-cell").length === 0);
 
 // 资源夹 → 场景列表 → 场景
 window.eval("openResource('ae')");
@@ -123,7 +123,41 @@ check("me-page-title", q(".page-title").textContent.includes("个人中心"));
 check("me-wordbook", d.body.textContent.includes("生词本"));
 
 T.setView(T.renderHome, null); T.render();
-check("home-again-ok", qa(".res-cell").length === 1);
+check("home-again-ok", qa(".res-cell").length === 2);
 
-console.log("PASS: " + pass + ", FAIL: " + fails.length);
-process.exit(fails.length ? 1 : 0);
+// 自定义语料：新建 → 机翻（stub）→ 保存 → 练习 → 删除
+const flush = () => new Promise(r => setTimeout(r, 10));
+(async () => {
+  T.setView(T.renderHome, null); T.render();
+  window.fetch = async () => ({ json: async () => ({ responseData: { translatedText: "TEST translation ok" }, responseStatus: 200, matches: [{ translation: "TEST short" }] }) });
+  window.eval("openResource('custom')");
+  check("custom-manage-page", d.body.textContent.includes("自定义语料"));
+  window.eval("openScene('custom')"); // inline onclick 在 jsdom 不执行，直调等价
+  check("custom-manage-empty", d.body.textContent.includes("新建对话场景"));
+  q("#newBtn").click();
+  q("#cName").value = "点咖啡";
+  q("#cZh").value = "我想要一杯热美式\n请给我少糖";
+  q("#trBtn").click(); await flush();
+  check("custom-translated", (q("#cEn").value.match(/TEST short/g) || []).length === 2);
+  q("#saveBtn").click(); await flush();
+  const saved = T.Store.get().customTopics || [];
+  check("custom-saved-topic", saved.length === 1);
+  check("custom-topic-shape", saved[0].dialogs[0].lines.length === 2 && saved[0].dialogs[0].lines[0].en.startsWith("TEST"));
+
+  T.setView(T.renderHome, null); T.render();
+  window.eval("openTopic('" + saved[0].id + "')");
+  check("custom-two-modes", !!q("#btnListen") && !!q("#btnDialog"));
+  q("#btnListen").click();
+  check("custom-listen-lines", qa(".line-item").length === 2);
+
+  T.setView(T.renderHome, null); T.render();
+  window.eval("openResource('custom')");
+  window.eval("openScene('custom')");
+  check("custom-listed", qa(".recent-item").some(x => x.textContent.includes("点咖啡")));
+  window.confirm = () => true;
+  window.eval("delCustom('" + saved[0].id + "')");
+  check("custom-deleted", (T.Store.get().customTopics || []).length === 0);
+  console.log("PASS: " + pass + ", FAIL: " + fails.length);
+  process.exit(fails.length ? 1 : 0);
+})();
+return;

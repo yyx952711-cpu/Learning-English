@@ -1053,4 +1053,11 @@ const RESOURCES = [
     desc: "美国国务院《Everyday Conversations》日常对话教材",
     sceneIds: ["social", "town", "fun", "life", "work", "travel"],
   },
+  {
+    id: "custom",
+    name: "我的自定义语料",
+    icon: "✍️",
+    desc: "输入日常想说的中文，一键生成地道美式表达（可编辑）",
+    sceneIds: ["custom"],
+  },
 ];

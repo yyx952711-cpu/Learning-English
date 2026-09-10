@@ -9,6 +9,7 @@ const Store = (() => {
     recent: [],       // [{type:'topic'|'fav', topicId, sceneId, ts}]
     review: {},       // { "topicId:rowId": {level:, nextTs:} }  简易艾宾浩斯
     wordbook: {},     // { word: {zh, phonetic, def, topicName, ts} }
+    customTopics: [], // [{...topic}] 用户自建语料
     lastPractice: null, // 记录今日打卡
   };
   let state = load();
@@ -65,6 +66,9 @@ const Store = (() => {
     removeWord(word) {
       delete state.wordbook[word]; save();
       return false;
+    },
+    saveCustomTopics(arr) {
+      state.customTopics = arr; save();
     },
     reset() { state = JSON.parse(JSON.stringify(defaults)); save(); },
   };

@@ -31,7 +31,7 @@ function goBack() {
   else { const p = stateStack.pop(); viewFn = p.fn; viewArg = p.arg; }
   render();
 }
-function openResource(resId) { pushView(renderResource, resId); }
+function openResource(resId) { if (resId === "custom") return renderCustomManage(); pushView(renderResource, resId); }
 function renderResource(resId) {
   const r = RESOURCES.find(x => x.id === resId);
   viewEl.innerHTML = header(`${r.icon} ${r.name}`, r.desc) + `
@@ -136,7 +136,9 @@ function topicCardHtml(t, s) {
 }
 
 /* ---------- 场景话题列表 ---------- */
+// 场景入口：自定义语料引导到管理页
 function renderScene(sceneId) {
+  if (sceneId === "custom") return renderCustomManage();
   const s = SCENES.find(x => x.id === sceneId);
   viewEl.innerHTML = header(`${s.icon} ${s.name}`, s.desc) +
     `<div class="section-title">📚 话题列表</div>` + s.topics.map(t => topicCardHtml(t, s)).join("");
@@ -580,7 +582,7 @@ function showWordPop(word, topic) {
         return;
       }
     } catch (e) { /* 落入最终提示 */ }
-    const d2 = wordPopEl.querySelector(".wp-def");
+    const d2 = wordPopEl && wordPopEl.querySelector(".wp-def");
     if (d2) { d2.className = "wp-def"; d2.textContent = "网络查询失败，暂无释义（可点击朗读）"; }
   }
   function renderWordMeaning(w, zh, ph, def) {
@@ -712,6 +714,139 @@ function renderFavTab(list) {
       </div></div>`).join("") : `<div class="empty-block">🌟 还没有收藏<br>在听读练习里点「⭐ 收藏」把好句子加进来</div>`}`;
 }
 
+/* ---------- 自定义语料资源 ---------- */
+function syncCustomScene() {
+  let s = SCENES.find(x => x.id === "custom");
+  if (!s) { s = { id: "custom", name: "自定义", icon: "✍️", desc: "我自己的日常语料", topics: [] }; SCENES.push(s); }
+  s.topics = Store.get().customTopics || [];
+}
+function renderCustomManage() {
+  const list = Store.get().customTopics || [];
+  viewEl.innerHTML = header("✍️ 自定义语料", "把日常想说的中文，变成专属美式语料") + `
+    <button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:14px;background:var(--primary);color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:14px;" id="newBtn">＋ 新建对话场景</button>
+    <div class="card" style="padding:12px;">
+      <div class="section-title">📋 我的语料（${list.length}）</div>
+      ${list.length ? list.map(t => `<div class="recent-item">
+        <div class="ri-icon">${t.icon}</div>
+        <div style="min-width:0;flex:1;cursor:pointer" onclick="openTopic('${t.id}')"><div class="ri-title">${t.name}</div>
+        <div class="ri-sub">${t.dialogs[0].lines.length} 句 · ${t.desc}</div></div>
+        <span class="chip on" onclick="openCustomEdit('${t.id}')">✏️ 编辑</span>
+        <span class="chip" onclick="delCustom('${t.id}')">🗑</span>
+      </div>`).join("") : `<div style="font-size:12px;color:var(--muted);padding:8px 0;">还没有自定义对话。点上面按钮，把你今天想说的中文逐句写进来。</div>`}
+    </div>
+    <div class="card" style="padding:12px;">
+      <div class="section-title">💡 玩法</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.9">
+        1. 一行一句输入自己的中文<br>
+        2. 点「🇺🇸 自动翻译」生成美式表达初稿<br>
+        3. 不满意的地方逐句改一改，保存<br>
+        4. 之后就能正常听读 / 角色扮演练习它
+      </div>
+    </div>`;
+  $("#newBtn").onclick = () => pushView(renderCustomEditor, null);
+  // 列表中的自定义话题也要能查 findTopic → 同步进 SCENES
+  syncCustomScene();
+}
+function openCustomEdit(topicId) { pushView(renderCustomEditor, topicId); }
+function delCustom(topicId) {
+  if (!confirm("确定删除这个自定义话题？删除后其收藏/掌握记录也会清除。")) return;
+  const st = Store.get();
+  st.customTopics = (st.customTopics || []).filter(t => t.id !== topicId);
+  Store.saveCustomTopics(st.customTopics);
+  ["favs", "mastery", "review"].forEach(k => Object.keys(st[k]).forEach(id => { if (id.startsWith(topicId + ":")) delete st[k][id]; }));
+  Store.save();
+  syncCustomScene();
+  toast("已删除"); render();
+}
+function renderCustomEditor(editId) {
+  const ext = editId ? (Store.get().customTopics || []).find(t => t.id === editId) : null;
+  const icon = ext ? ext.icon : "💬";
+  viewEl.innerHTML = header(editId ? "✏️ 编辑语料" : "＋ 新建对话", "中文逐句输入，可自动生成美式表达") + `
+    <div class="card">
+      <div class="setting-row"><div class="sr-label">场景名称</div></div>
+      <input id="cName" maxlength="12" placeholder="例：点果茶" value="${ext ? ext.name.replace(/"/g, "&quot;") : ""}" style="width:100%;padding:10px;border:1.5px solid #e3e6ef;border-radius:10px;font-size:14px;margin-bottom:12px;">
+      <div class="sr-label">中文台词</div>
+      <textarea id="cZh" rows="7" placeholder="一行一句想说的中文，例如：&#10;店员：你好，请问想喝点什么？&#10;你：你好，我要一杯鸭屎香柠檬茶。&#10;你：少糖，正常冰，谢谢。" style="width:100%;padding:10px;border:1.5px solid #e3e6ef;border-radius:10px;font-size:13px;margin-top:6px;"></textarea>
+      <div class="setting-row" style="padding:8px 0 4px;">
+        <div><div class="sr-label">英文台词</div><div class="sr-desc">英文留空 → 自动翻译；不满意可点重新翻译</div></div>
+        <button class="chip on" id="trBtn">🇺🇸 自动翻译</button>
+      </div>
+      <textarea id="cEn" class="en-area" rows="7" placeholder="译文会逐句显示在这里，可直接修改；行数与中文台词对应" style="width:100%;padding:10px;border:1.5px solid #e3e6ef;border-radius:10px;font-size:13px;"></textarea>
+    </div>
+    <button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:14px;background:var(--primary);color:#fff;font-size:15px;font-weight:700;cursor:pointer;" id="saveBtn">💾 保存到自定义语料</button>
+    <div style="height:60px"></div>`;
+  if (editId) {
+    const src = ext.dialogs[0].lines;
+    $("#cZh").value = src.map(l => l.zh).join("\n");
+    $("#cEn").value = src.map(l => l.en).join("\n");
+  }
+  function parseLines() {
+    const zh = $("#cZh").value.split("\n").map(x => x.trim()).filter(Boolean);
+    const enRaw = $("#cEn").value.split("\n").map(x => x.trim()).filter(Boolean);
+    return zh.map((z, i) => ({ zh: z, en: enRaw[i] || "" }));
+  }
+  $("#trBtn").onclick = async () => {
+    const zh = $("#cZh").value.split("\n").map(x => x.trim()).filter(Boolean);
+    if (!zh.length) return toast("请先输入中文");
+    $("#trBtn").textContent = "⏳ 翻译中…"; $("#trBtn").disabled = true;
+    const enOut = []; let fail = 0;
+    for (const z of zh) { const en = await mtTranslate(z); if (en) enOut.push(en); else { enOut.push(""); fail++; } }
+    $("#cEn").value = enOut.join("\n");
+    $("#trBtn").textContent = "🇺🇸 重新翻译"; $("#trBtn").disabled = false;
+    toast(fail ? `${fail} 句机翻失败，该行留空可手填` : "✅ 翻译完成，已填入英文台词区，可直接修改");
+  };
+  $("#saveBtn").onclick = async () => {
+    let draft = parseLines().filter(d => d.zh);
+    if (draft.some(d => !d.en)) {
+      for (const d of draft) if (!d.en) { const en = await mtTranslate(d.zh); if (en) d.en = en; }
+      $("#cEn").value = draft.map(d => d.en).join("\n");
+    }
+    if (draft.some(d => !d.en)) return toast("还有句子没有英文，补充或再点自动翻译");
+    const name = $("#cName").value.trim();
+    if (!name) return toast("请填写场景名称");
+    let list = Store.get().customTopics || [];
+    const topic = {
+      id: editId || ("c" + Date.now().toString(36)),
+      name, icon,
+      desc: `我的语料 · ${draft.length} 句`,
+      words: [],
+      sentences: [],
+      dialogs: [{ title: name, lines: draft.map(d => ({ en: d.en, zh: d.zh })) }],
+    };
+    if (editId) list = list.map(t => (t.id === editId ? topic : t));
+    else list = list.concat([topic]);
+    Store.saveCustomTopics(list);
+    syncCustomScene();
+    toast("💾 已保存，可返回练习啦");
+    stateStack.pop(); stateStack.pop(); viewFn = renderCustomManage; viewArg = null; render();
+  };
+}
+/* MyMemory 中英机翻 → 从多个候选中取“简洁、口语”的那句 → 首字母大写 + 结尾标点 */
+async function mtTranslate(line) {
+  try {
+    const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(line)}&langpair=zh-CN|en-US`);
+    const m = await r.json();
+    const rt0 = (m.responseData || {}).translatedText || "";
+    if (!rt0 && !m.matches) return null;
+    const bad = t => !t || /INVALID|EXCEPTION|QUOTA|HTML ERROR/i.test(t) || /[\u4e00-\u9fa5]/.test(t);
+    // 候选集：官方主译 + 匹配库多译本（matches 常含更简短口语的译文）
+    const cands = [];
+    const rt = (m.responseData || {}).translatedText || "";
+    if (!bad(rt)) cands.push(rt);
+    (m.matches || []).forEach(x => { if (x && !bad(x.translation)) cands.push(x.translation); });
+    if (!cands.length) return null;
+    // 优选最短的候选（短译通常更口语、更易懂），主译权重靠前
+    cands.sort((a, b) => a.length - b.length);
+    let t = (cands.find(x => x.length <= 40) || cands[0]).trim();
+    t = t.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+    t = t.replace(/\s+/g, " ").trim();
+    if (!t) return null;
+    t = t[0].toUpperCase() + t.slice(1);
+    if (!/[.!?]$/.test(t)) t += t.includes("?") ? "?" : ".";
+    return t;
+  } catch (e) { return null; }
+}
+
 /* ---------- Tab 事件 ---------- */
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   currentTab = t.dataset.tab;
@@ -724,4 +859,5 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
 /* 启动 */
 if (!TTS.available) toast("当前浏览器不支持语音合成，建议用 Chrome / Edge");
 TTS.refresh && window.speechSynthesis && TTS.refresh();
+syncCustomScene();
 render();
