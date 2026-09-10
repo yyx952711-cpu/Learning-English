@@ -1,5 +1,5 @@
-/* Service Worker：缓存本站全部资源，实现完全离线（地铁无网络也能练） */
-const CACHE = "oral-app-v1";
+/* Service Worker：网络优先 → 永远先用最新版；断网时用缓存兜底（地铁无网也能练） */
+const CACHE = "oral-app-v2";
 const ASSETS = [
   "./", "./index.html", "./manifest.webmanifest", "./icon.svg",
   "./css/style.css",
@@ -13,13 +13,18 @@ self.addEventListener("activate", e => {
 });
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
-  // 外部词典接口不缓存，正常放行
-  if (!e.request.url.startsWith(self.location.origin)) return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy));
+  if (!e.request.url.startsWith(self.location.origin)) return; // 外部词典接口不劫持
+  e.respondWith((async () => {
+    try {
+      // 有网 → 拿最新版 + 更新缓存（保证发布新版后用户立刻可用）
+      const res = await fetch(e.request, { cache: "no-cache" });
+      const cp = res.clone();
+      caches.open(CACHE).then(c => c.put(e.request, cp)).catch(() => {});
       return res;
-    }).catch(() => caches.match("./index.html")))
-  );
+    } catch (err) {
+      // 断网 → 回退缓存
+      const hit = await caches.match(e.request);
+      return hit || caches.match("./index.html");
+    }
+  })());
 });

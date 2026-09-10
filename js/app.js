@@ -696,6 +696,11 @@ function renderMe(tab) {
         <label class="switch"><input type="checkbox" id="saveSw" ${st.settings.saveRecordings ? "checked" : ""}><em></em></label></div>
     </div>
     <div style="text-align:center;margin-top:4px"><span style="font-size:12px;color:var(--muted);cursor:pointer" onclick="if(confirm('确定清空全部练习数据吗？')==true && (Store.reset(), render(), true)) {} ">清空练习数据</span></div>
+    <div style="text-align:center;margin-top:10px;">
+      <span style="font-size:11px;color:var(--muted)">版本 ${APP_VERSION}${swState()}</span>
+      <span style="font-size:11px;color:var(--primary);cursor:pointer;margin-left:10px" onclick="forceRefresh()">⟳ 强制刷新缓存</span>
+    </div>
+    <div style="height:8px"></div>
     <div style="height:8px"></div>`);
   document.querySelectorAll("[data-po]").forEach(b => b.onclick = () => { st.settings.playOrder = b.dataset.po; Store.save(); renderMe(); });
   document.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { st.settings.accent = b.dataset.acc; Store.save(); renderMe(); });
@@ -845,6 +850,30 @@ async function mtTranslate(line) {
     if (!/[.!?]$/.test(t)) t += t.includes("?") ? "?" : ".";
     return t;
   } catch (e) { return null; }
+}
+
+/* ---------- 版本 & 缓存自更新 ---------- */
+const APP_VERSION = "v1.6 · " + new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+function swState() {
+  if (!("serviceWorker" in navigator)) return "";
+  return navigator.serviceWorker.controller ? " · 离线可用" : "";
+}
+async function forceRefresh() {
+  toast("正在清理缓存并刷新…");
+  try {
+    if ("caches" in window) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); }
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (e) { /* 忽略 */ }
+  setTimeout(() => location.reload(true), 400);
+}
+/* SW 检测到新版本时提示刷新 */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    toast("🔄 已更新到最新版本");
+  });
 }
 
 /* ---------- Tab 事件 ---------- */
